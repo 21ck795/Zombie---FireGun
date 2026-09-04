@@ -2,7 +2,7 @@
 """
 批量自动签到脚本
 目标网站: https://web.xjskp.vip:6688/pay/login
-流程: 打开登录页 -> 输入账号密码 -> 选择区组 -> 登录 -> 点每日签到 -> 点立即签到
+流程: 打开登录页 -> 输入账号密码 -> 选择区组 -> 进入游戏 -> 点每日签到 -> 点立即签到
 
 依赖安装:
     pip install selenium webdriver-manager
