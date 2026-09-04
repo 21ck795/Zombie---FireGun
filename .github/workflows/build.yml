@@ -23,7 +23,7 @@ jobs:
     
     - name: 打包 exe
       run: |
-        pyinstaller -F -n 批量签到 --clean auto_sign.py
+        pyinstaller -F -n 批量签到 --clean --collect-all selenium --collect-all webdriver_manager auto_sign.py
     
     - name: 上传产物
       uses: actions/upload-artifact@v4
