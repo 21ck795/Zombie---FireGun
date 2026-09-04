@@ -314,7 +314,7 @@ def login(driver, account, password, server):
     login_clicked = False
 
     # 方式1：各种标签 + 各种文字
-    login_texts = ["登录", "登 录", "立即登录", "确认登录", "提交", "确定", "登陆"]
+    login_texts = ["进入游戏", "登录", "登 录", "立即登录", "确认登录", "提交", "确定", "登陆", "开始游戏"]
     login_tags = ["button", "div", "a", "span", "input"]
     for tag in login_tags:
         for text in login_texts:
