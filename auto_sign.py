@@ -89,8 +89,7 @@ ACCOUNTS = [
     ("13734329437", "9907967"),
     ("13734329438", "9907967"),
     ("13734329439", "9907967"),
-    ("13734329440", "9907967"),
-    # 继续添加更多账号...
+    ("13734329440", "9907967"),    # 继续添加更多账号...
 ]
 
 # 需要签到的区组（默认全部七个区，不需要的删掉即可）
@@ -197,31 +196,95 @@ def wait_and_input(driver, by, value, text, timeout=TIMEOUT, description=""):
 
 def select_server(driver, server_name):
     """选择区组（下拉框）"""
-    # 先点击下拉框展开
-    if not wait_and_click(driver, By.XPATH, "//select", description="区组下拉框"):
-        # 尝试通过 placeholder 或 class 定位
+    from selenium.webdriver.common.keys import Keys
+
+    # 先点击下拉框展开（尝试多种定位）
+    dropdown_opened = False
+    # 方式1：原生 select
+    if wait_and_click(driver, By.XPATH, "//select", description="区组下拉框", timeout=5):
+        dropdown_opened = True
+    # 方式2：自定义下拉框（包含select/dropdown类名）
+    if not dropdown_opened:
         try:
-            dropdown = driver.find_element(By.XPATH, "//*[contains(@class,'select') or contains(@class,'dropdown')]")
+            dropdown = driver.find_element(By.XPATH, "//*[contains(@class,'select') or contains(@class,'dropdown') or contains(@class,'el-select')]")
             dropdown.click()
+            dropdown_opened = True
+            logger.info("  ✓ 点击自定义下拉框")
         except NoSuchElementException:
-            logger.warning("  ✗ 未找到区组下拉框")
-            return False
+            pass
+    # 方式3：点击包含"区"字的下拉框
+    if not dropdown_opened:
+        try:
+            dropdown = driver.find_element(By.XPATH, "//*[contains(text(),'一区') or contains(text(),'请选择')]/ancestor::*[contains(@class,'select') or contains(@class,'dropdown') or @role='listbox']")
+            dropdown.click()
+            dropdown_opened = True
+        except Exception:
+            pass
 
-    time.sleep(0.5)
+    if not dropdown_opened:
+        logger.warning("  ✗ 未找到区组下拉框")
+        return False
 
-    # 选择对应区组
-    option_xpath = f"//option[contains(text(),'{server_name}')]"
-    if not wait_and_click(driver, By.XPATH, option_xpath, description=f"选择{server_name}"):
-        # 尝试用 Select 类
+    time.sleep(0.8)
+
+    # 选择对应区组（尝试多种方式）
+    selected = False
+    # 方式1：点击选项文本
+    option_xpath = f"//*[contains(text(),'{server_name}') and not(self::input)]"
+    if wait_and_click(driver, By.XPATH, option_xpath, description=f"选择{server_name}", timeout=5):
+        selected = True
+    # 方式2：原生 Select 类
+    if not selected:
         try:
             from selenium.webdriver.support.ui import Select
             select = Select(driver.find_element(By.TAG_NAME, "select"))
             select.select_by_visible_text(server_name)
             logger.info(f"  ✓ Select类选择: {server_name}")
-            return True
+            selected = True
         except Exception:
-            logger.warning(f"  ✗ 无法选择{server_name}")
-            return False
+            pass
+    # 方式3：点击下拉框中对应序号的选项
+    if not selected:
+        try:
+            options = driver.find_elements(By.XPATH, "//*[@role='option' or contains(@class,'option') or contains(@class,'item')]")
+            server_index = ["一区", "二区", "三区", "四区", "五区", "六区", "七区"].index(server_name)
+            if server_index < len(options):
+                options[server_index].click()
+                logger.info(f"  ✓ 按序号选择: {server_name}")
+                selected = True
+        except Exception:
+            pass
+
+    if not selected:
+        logger.warning(f"  ✗ 无法选择{server_name}")
+        return False
+
+    time.sleep(0.5)
+
+    # 关键：关闭下拉框，避免遮住登录按钮
+    # 方式1：按 ESC 键
+    try:
+        body = driver.find_element(By.TAG_NAME, "body")
+        body.send_keys(Keys.ESCAPE)
+        logger.info("  ✓ 按ESC关闭下拉框")
+    except Exception:
+        pass
+
+    time.sleep(0.3)
+
+    # 方式2：点击页面空白处（登录标题区域）
+    try:
+        blank = driver.find_element(By.XPATH, "//*[contains(text(),'登录') and (self::h1 or self::h2 or self::h3 or self::div)]")
+        driver.execute_script("arguments[0].click();", blank)
+        logger.info("  ✓ 点击空白处关闭下拉框")
+    except Exception:
+        # 点击页面左上角空白
+        try:
+            driver.execute_script("document.elementFromPoint(10, 10).click();")
+        except Exception:
+            pass
+
+    time.sleep(0.5)
     return True
 
 
@@ -244,19 +307,63 @@ def login(driver, account, password, server):
     select_server(driver, server)
     time.sleep(0.5)
 
-    # 点击登录按钮（尝试多种定位）
+    # 选择区组后等待页面稳定
+    time.sleep(1)
+
+    # 点击登录按钮（尝试多种定位方式）
     login_clicked = False
-    for btn_text in ["登录", "登 录", "立即登录", "确认登录"]:
-        if wait_and_click(driver, By.XPATH, f"//button[contains(text(),'{btn_text}')]", description=f"登录按钮({btn_text})"):
-            login_clicked = True
-            break
-        if wait_and_click(driver, By.XPATH, f"//*[contains(@class,'btn') and contains(text(),'{btn_text}')]", description=f"登录按钮(class)"):
-            login_clicked = True
+
+    # 方式1：各种标签 + 各种文字
+    login_texts = ["登录", "登 录", "立即登录", "确认登录", "提交", "确定", "登陆"]
+    login_tags = ["button", "div", "a", "span", "input"]
+    for tag in login_tags:
+        for text in login_texts:
+            if tag == "input":
+                xpath = f"//input[@type='submit' or @type='button'][contains(@value,'{text}')]"
+            else:
+                xpath = f"//{tag}[contains(text(),'{text}')]"
+            if wait_and_click(driver, By.XPATH, xpath, description=f"登录按钮({tag}/{text})", timeout=5):
+                login_clicked = True
+                break
+        if login_clicked:
             break
 
+    # 方式2：通过 class 定位
     if not login_clicked:
-        # 最后尝试：页面上最后一个按钮
-        wait_and_click(driver, By.XPATH, "//button[last()]", description="登录按钮(末位)")
+        for cls in ["login", "submit", "btn", "button"]:
+            if wait_and_click(driver, By.XPATH, f"//*[contains(@class,'{cls}')]", description=f"登录按钮(class={cls})", timeout=5):
+                login_clicked = True
+                break
+
+    # 方式3：尝试提交表单
+    if not login_clicked:
+        try:
+            driver.execute_script("document.querySelector('form').submit();")
+            logger.info("  ✓ JS提交表单")
+            login_clicked = True
+        except Exception:
+            pass
+
+    # 方式4：点击页面上最后一个可点击元素
+    if not login_clicked:
+        try:
+            elements = driver.find_elements(By.XPATH, "//button | //div[@role='button'] | //a[@class] | //input[@type='submit']")
+            if elements:
+                driver.execute_script("arguments[0].click();", elements[-1])
+                logger.info(f"  ✓ 点击末位可点击元素")
+                login_clicked = True
+        except Exception:
+            pass
+
+    if not login_clicked:
+        logger.warning("  ✗ 未找到登录按钮，尝试按回车提交")
+        try:
+            from selenium.webdriver.common.keys import Keys
+            pwd_input = driver.find_element(By.XPATH, "//input[@type='password']")
+            pwd_input.send_keys(Keys.ENTER)
+            login_clicked = True
+        except Exception:
+            pass
 
     # 等待登录成功（检测是否跳转到商城页或出现"每日签到"按钮）
     time.sleep(3)
